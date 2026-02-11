@@ -26,4 +26,4 @@ async def generate_video(month= Path(...)):
   return response
 
 if __name__=='__main__':
-  uvicorn.run("app:app", port=8000, reload=False)
+  uvicorn.run("app:app", port=8000, reload=True)

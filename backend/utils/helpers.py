@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
+from elevenlabs.client import ElevenLabs
+import os
 import re
 
 def raw_script_maker(script_file, event, celebrant_image):
@@ -93,26 +95,112 @@ def json_to_script_txt(json_file, txt_file):
         return {"Error converting JSON to text": str(e)}
 
 def ai_script_maker(month):
+
     from dotenv import load_dotenv
-    import os
 
-    load_dotenv() 
-    api_key = os.getenv("OPENAI_API_KEY")
-    client = OpenAI(api_key=api_key)
+    from pathlib import Path
+
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        return {"error": "Missing AI API key"}
+
+    client = genai.Client(api_key=api_key)
+
     try:
-
+        # Paths
         script_json = Path("./data") / month / "script.json"
-        script_txt =  script_json.with_suffix(".txt")
-        data = json_to_script_txt(script_json, script_txt)
-        
-        prompt = f"Create a heartfelt video script for the following events in {month}:\n\n"
+        script_txt = script_json.with_suffix(".txt")
 
-        ai_response = client.responses.create(
-            model="gpt-4",
-            prompt=prompt + data,
-            # max_tokens=1500,
-            temperature=0.7
+        # Convert JSON → plain text
+        text_data = json_to_script_txt(script_json, script_txt)
+        if isinstance(text_data, dict) and "Error" in text_data:
+            return text_data
+
+        # Prompt for structured narration with markers
+        prompt = f"""
+        You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.
+
+        CRITICAL RULES:
+        1. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
+        2. Every person must be announced with their full name and exact date
+        3. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
+        4. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")
+        5. End each celebrant line with <cend>
+
+        STRUCTURE:
+        - Opening: One warm sentence welcoming the month and the celebrations ahead
+        - For each generation present in the data:
+        * Brief transitional sentence introducing the generation in quotes
+        * List each person with their date, full name, and relationship context
+        * Use natural variety: "we celebrate", "best wishes go to", "we honor", "birthday cheers go to", "we cheer for"
+        - Closing: If anniversaries/weddings exist, add a final section celebrating couples with date and both names
+
+        STYLE REQUIREMENTS:
+        - Write in flowing paragraphs, NOT bullet points
+        - Use conversational, spoken-word friendly language
+        - Include emotional warmth but keep it natural
+        - NO stage directions or instructions
+        - NO generic placeholders - use every actual name provided
+
+        DATA TO PROCESS:
+        {text_data}
+
+        Generate the script now, ensuring every single person in the data is mentioned by name with their specific date.
+        """
+
+        # Generate AI script
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-09-2025",
+            contents=prompt
         )
-        print(ai_response)
+
+        # Save AI narration
+        ai_script_path = Path("./data") / month / "ai_script.txt"
+        ai_script_path.write_text(response.text, encoding="utf-8")
+
+        return {
+            "message": "AI script created successfully",
+            "script_path": str(ai_script_path),
+            "ai_response": response.text
+        }
+
     except Exception as e:
         return {"Error creating AI script": str(e)}
+
+def extract_anchors_and_clean_text(text, window=3):
+    anchors = []
+    def replacer(match):
+        before = match.group(1)
+        words = before.split()
+        anchor = " ".join(words[-window:])
+        anchors.append(anchor)
+        return before
+    clean_text = re.sub(
+        r"(.*?)(<cend>)",
+        replacer,
+        text,
+        flags = re.DOTALL
+    )
+    return clean_text, anchors
+
+def text_to_speech(cleaned_voiceover):
+    client = ElevenLabs(
+        api_key=os.getenv("ELEVENLABS_API_KEY")
+    )
+    try:
+        audio  = client.text_to_speech.convert(
+            text=cleaned_voiceover,
+            voice_id="kPzsL2i3teMYv0FxEYQ6",
+            model_id="eleven_flash_v2_5",
+            output_format="mp3_44100_128",
+        )
+
+        with open("output.mp3", "wb") as f:
+            for chunk in audio:
+                f.write(chunk)
+
+        return {"message": "Audio saved to output.mp3"}
+    except Exception as e:
+        return {"Error generating TTS audio": str(e)}
