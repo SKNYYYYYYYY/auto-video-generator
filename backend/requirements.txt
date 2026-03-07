@@ -4,4 +4,5 @@ python-multipart
 openai
 python-dotenv
 google-genai
-elevenlabs  
+elevenlabs
+moviepy 

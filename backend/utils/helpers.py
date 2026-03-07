@@ -1,10 +1,13 @@
 import json
+import os
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
-from elevenlabs.client import ElevenLabs
-import os
-import re
+from utils.logger_config import get_logger
+from utils.exceptions import LLMError
+
+logger = get_logger(__name__)
 
 def raw_script_maker(script_file, event, celebrant_image):
     try:
@@ -49,10 +52,10 @@ def raw_script_maker(script_file, event, celebrant_image):
         script_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return {"message": f"script updated successfully in {script_file}"}
     except Exception as e:
-        return {"Error updating script": str(e)}
+        logger.exception("Error updating script: %s", str(e))
+        raise Exception("Failed to update script") from e
 
-import json
-from pathlib import Path
+
 
 def json_to_script_txt(json_file, txt_file):
     try:
@@ -91,12 +94,13 @@ def json_to_script_txt(json_file, txt_file):
         return text_content
 
     except Exception as e:
-        
-        return {"Error converting JSON to text": str(e)}
+        logger.exception("Error converting JSON to text:%s", str(e))
+        raise Exception("Failed to convert JSON to text") from e
+
 
 def ai_script_maker(month):
 
-    from dotenv import load_dotenv
+    # from dotenv import load_dotenv
 
     from pathlib import Path
 
@@ -124,10 +128,11 @@ def ai_script_maker(month):
 
         CRITICAL RULES:
         1. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
-        2. Every person must be announced with their full name and exact date
-        3. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
-        4. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")
-        5. End each celebrant line with <cend>
+        2. YOU MUST END EACH CELEBRANT LINE WITH <cend>
+        3. Every person must be announced with their full name and exact date
+        4. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
+        5. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")
+        
 
         STRUCTURE:
         - Opening: One warm sentence welcoming the month and the celebrations ahead
@@ -152,10 +157,10 @@ def ai_script_maker(month):
 
         # Generate AI script
         response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-09-2025",
+            model="gemini-2.5-flash-lite-preview-09-2025",
             contents=prompt
         )
-
+        
         # Save AI narration
         ai_script_path = Path("./data") / month / "ai_script.txt"
         ai_script_path.write_text(response.text, encoding="utf-8")
@@ -167,40 +172,7 @@ def ai_script_maker(month):
         }
 
     except Exception as e:
-        return {"Error creating AI script": str(e)}
-
-def extract_anchors_and_clean_text(text, window=3):
-    anchors = []
-    def replacer(match):
-        before = match.group(1)
-        words = before.split()
-        anchor = " ".join(words[-window:])
-        anchors.append(anchor)
-        return before
-    clean_text = re.sub(
-        r"(.*?)(<cend>)",
-        replacer,
-        text,
-        flags = re.DOTALL
-    )
-    return clean_text, anchors
-
-def text_to_speech(cleaned_voiceover):
-    client = ElevenLabs(
-        api_key=os.getenv("ELEVENLABS_API_KEY")
-    )
-    try:
-        audio  = client.text_to_speech.convert(
-            text=cleaned_voiceover,
-            voice_id="kPzsL2i3teMYv0FxEYQ6",
-            model_id="eleven_flash_v2_5",
-            output_format="mp3_44100_128",
-        )
-
-        with open("output.mp3", "wb") as f:
-            for chunk in audio:
-                f.write(chunk)
-
-        return {"message": "Audio saved to output.mp3"}
-    except Exception as e:
-        return {"Error generating TTS audio": str(e)}
+        logger.error("Error creating AI script: %s", str(e), exc_info=True)
+        if isinstance(e, LLMError):
+            raise
+        raise LLMError(f"Failed to create AI script: {str(e)}") from e
