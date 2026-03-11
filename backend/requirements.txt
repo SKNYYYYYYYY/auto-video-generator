@@ -5,4 +5,5 @@ openai
 python-dotenv
 google-genai
 elevenlabs
-moviepy 
+moviepy
+google-generativeai 
