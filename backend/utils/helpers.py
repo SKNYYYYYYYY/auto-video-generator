@@ -127,8 +127,8 @@ def ai_script_maker(month):
         You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.
 
         CRITICAL RULES:
-        1. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
-        2. YOU MUST END EACH CELEBRANT LINE WITH <cend>
+        1. YOU MUST END EACH CELEBRANT LINE WITH <cend>
+        2. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
         3. Every person must be announced with their full name and exact date
         4. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
         5. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")

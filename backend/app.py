@@ -3,7 +3,6 @@ from fastapi import FastAPI, Form, File, UploadFile, Path, HTTPException
 from utils.lib import image_saver, video_generator
 from utils.logger_config import get_logger
 from utils.exceptions import VideoGenerationError
-
 app = FastAPI()
 logger = get_logger(__name__)
 
