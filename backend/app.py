@@ -1,4 +1,5 @@
 import uvicorn
+import os
 from fastapi import FastAPI, Form, File, UploadFile, Path, HTTPException
 from utils.lib import image_saver, video_generator
 from utils.logger_config import get_logger
@@ -37,4 +38,5 @@ async def generate_video(month: str = Path(...)):  # Added type hint
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 if __name__=='__main__':
-  uvicorn.run("app:app", port=8000, reload=True)
+  port = int(os.environ.get("PORT", 8000))  
+  uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
