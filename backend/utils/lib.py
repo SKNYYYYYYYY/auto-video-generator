@@ -36,6 +36,7 @@ async def video_generator(month):
   try:
       # generate the voiceover script using the NLP
       raw_voiceover_dict = ai_script_maker(month)
+      print(raw_voiceover_dict)
       voiceover_text = raw_voiceover_dict.get("ai_response", "")
       
       if not voiceover_text:

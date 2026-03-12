@@ -100,8 +100,6 @@ def json_to_script_txt(json_file, txt_file):
 
 def ai_script_maker(month):
 
-    # from dotenv import load_dotenv
-
     from pathlib import Path
 
     load_dotenv()
@@ -160,7 +158,7 @@ def ai_script_maker(month):
             model="gemini-2.5-flash-lite-preview-09-2025",
             contents=prompt
         )
-        
+        print("llm response = %s", str(response))
         # Save AI narration
         ai_script_path = Path("./data") / month / "ai_script.txt"
         ai_script_path.write_text(response.text, encoding="utf-8")

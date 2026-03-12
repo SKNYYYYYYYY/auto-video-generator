@@ -4,11 +4,19 @@ from fastapi import FastAPI, Form, File, UploadFile, Path, HTTPException
 from utils.lib import image_saver, video_generator
 from utils.logger_config import get_logger
 from utils.exceptions import VideoGenerationError
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 logger = get_logger(__name__)
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 @app.get("/")
 async def index():
   return {"message": "backend is live"}

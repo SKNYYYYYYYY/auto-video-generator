@@ -65,9 +65,9 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.logoRow}>
           <span style={styles.logoIcon}>◈</span>
-          <span style={styles.logoText}>ARCHIVUM</span>
+          <span style={styles.logoText}>AutoVid</span>
         </div>
-        <p style={styles.tagline}>Memory Preservation Engine</p>
+        <p style={styles.tagline}>Let's make it memorable</p>
       </header>
 
       <nav style={styles.nav}>
@@ -85,7 +85,7 @@ export default function App() {
       <main style={styles.main}>
         {activeTab === "upload" && (
           <div style={styles.panel} className="panel-enter">
-            <h2 style={styles.panelTitle}>Upload Memory</h2>
+            <h2 style={styles.panelTitle}>Upload</h2>
 
             <div style={styles.grid} className="panel-grid">
               <Field label="Full Name">
@@ -113,7 +113,7 @@ export default function App() {
               </Field>
 
               <Field label="Type" span>
-                <input style={styles.input} placeholder="e.g. portrait, landscape…"
+                <input style={styles.input} placeholder="e.g. Birthday"
                   value={form.type} onChange={e => setForm({...form, type: e.target.value})} />
               </Field>
             </div>
@@ -125,7 +125,7 @@ export default function App() {
                   <div style={styles.dropInner}>
                     <span style={styles.dropIcon}>⊕</span>
                     <span style={styles.dropText}>Click to select image</span>
-                    <span style={styles.dropSub}>JPG, PNG, WEBP</span>
+                    <span style={styles.dropSub}>JPG, PNG</span>
                   </div>
                 )
               }
@@ -135,7 +135,7 @@ export default function App() {
 
             <button style={styles.btn} onClick={handleUpload}
               disabled={loading} className="btn-hover">
-              {loading ? <span className="spinner">◌</span> : "↑ Upload Memory"}
+              {loading ? <span className="spinner">◌</span> : "↑ Upload"}
             </button>
 
             <StatusBox status={uploadStatus} />
@@ -145,7 +145,7 @@ export default function App() {
         {activeTab === "generate" && (
           <div style={styles.panel} className="panel-enter">
             <h2 style={styles.panelTitle}>Generate Video</h2>
-            <p style={styles.desc}>Compile all uploaded memories for a given month into a video archive.</p>
+            <p style={styles.desc}>Compile all uploaded images for the selected month into a video.</p>
 
             <Field label="Select Month">
               <select style={{ ...styles.input, fontSize: "1.1rem", padding: "14px 18px" }}
@@ -169,7 +169,7 @@ export default function App() {
         )}
       </main>
 
-      <footer style={styles.footer}>ARCHIVUM © {new Date().getFullYear()}</footer>
+      <footer style={styles.footer}>AutoVid © {new Date().getFullYear()}</footer>
     </div>
   );
 }
@@ -203,7 +203,7 @@ const AMBER = "#c8860a";
 const LIGHT = "#faf7f2";
 
 const styles = {
-  root: { minHeight: "100vh", background: LIGHT, color: INK, fontFamily: "'Cormorant Garamond', Georgia, serif", position: "relative", overflow: "hidden" },
+  root: { minWidth:" 1580px", minHeight: "100vh", background: LIGHT, color: INK, fontFamily: "'Cormorant Garamond', Georgia, serif", position: "relative", overflow: "hidden" },
   grain: { position: "fixed", inset: 0, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E\")", pointerEvents: "none", zIndex: 0 },
   // CHANGED: clamp for fluid vertical padding on mobile
   header: { textAlign: "center", padding: "clamp(28px, 6vw, 52px) 24px 24px", position: "relative", zIndex: 1 },
@@ -217,7 +217,7 @@ const styles = {
   navBtn: { flex: 1, padding: "13px 20px", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "0.85rem", letterSpacing: "0.15em", textTransform: "uppercase", color: "#8a7560", transition: "all 0.25s" },
   navBtnActive: { background: AMBER, color: "#fff" },
   // CHANGED: clamp for fluid horizontal padding
-  main: { maxWidth: 600, margin: "0 auto", padding: "0 clamp(12px, 4vw, 20px) 60px", position: "relative", zIndex: 1 },
+  main: {  margin: "0 auto", padding: "0 clamp(12px, 4vw, 20px) 60px", position: "relative", zIndex: 1 },
   // CHANGED: clamp for panel padding so it breathes on desktop but stays tight on mobile
   panel: { background: "#fff", border: `1.5px solid #e8ddd0`, borderRadius: 3, padding: "clamp(20px, 5vw, 40px) clamp(16px, 5vw, 36px)", boxShadow: "0 4px 40px rgba(26,20,16,0.07)" },
   panelTitle: { fontSize: "1.7rem", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 28, marginTop: 0, borderBottom: `1px solid #e8ddd0`, paddingBottom: 16, color: INK },
