@@ -104,13 +104,9 @@ def extract_anchors_and_clean_text(text, window=3):
     return clean_text, anchors
 
 
-def text_to_speech(text, month):
+def text_to_speech(text, month, ABS_DIR):
     try:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        AUDIO_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data", month))
-        AUDIO_FILE = "voiceover.mp3"
-        
-        os.makedirs(AUDIO_DIR, exist_ok=True)
+        AUDIO_FILE = os.path.abspath(os.path.join(ABS_DIR, "voiceover.mp3"))
 
         cleaned_text, anchors = extract_anchors_and_clean_text(text)
 

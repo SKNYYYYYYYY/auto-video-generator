@@ -5,57 +5,74 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from utils.logger_config import get_logger
+import shutil
 from utils.exceptions import LLMError
 
 logger = get_logger(__name__)
 
-def raw_script_maker(script_file, event, celebrant_image):
+def raw_script_maker(script_file, event, celebrant_image, base_celebrant_source="slides/base_celebrant.png"):
+    """
+    Update the script JSON with the new celebrant, and copy base_celebrant.png
+    into the same folder as the uploaded celebrant image if it doesn't exist.
+    
+    Parameters:
+    - script_file: path to the JSON script file
+    - event: "Birthdays", "Weddings", etc.
+    - celebrant_image: path to the newly uploaded celebrant image
+    - base_celebrant_source: path to the original base_celebrant.png
+    """
     try:
         script_file = Path(script_file)
-        
-        #  Parse filename 
-        base = Path(celebrant_image).stem
+        celebrant_image = Path(celebrant_image)
+        pics_dir = celebrant_image.parent  # Directory where the image is being uploaded
+
+        # --- Step 1: Copy base_celebrant.png to pics_dir if missing ---
+        base_target = pics_dir / Path(base_celebrant_source).name
+        if not base_target.exists():
+            shutil.copy(base_celebrant_source, base_target)
+            logger.info(f"Copied base celebrant to {base_target}")
+
+        # --- Step 2: Prepare JSON entry ---
+        base = celebrant_image.stem
         gen, day, month, *name_parts = base.split("_")
         generation = gen.replace("gen", "")
         name = " ".join(name_parts)
 
-        # Ordinal date
         day = int(day)
         suffix = "th" if 11 <= day <= 13 else {1:"st",2:"nd",3:"rd"}.get(day % 10, "th")
         entry = f"{day}{suffix} - {name}"
 
-        #  Load existing JSON 
+        # --- Step 3: Load existing JSON ---
         if script_file.exists():
             data = json.loads(script_file.read_text(encoding="utf-8"))
         else:
             data = {}
 
-        #  Insert entry 
+        # --- Step 4: Insert entry into JSON ---
         if event.lower() == "birthdays":
-            if "Birthdays" not in data:
-                data["Birthdays"] = {}
-            if generation not in data["Birthdays"]:
-                data["Birthdays"][generation] = []
-            if entry not in data["Birthdays"][generation]:
-                data["Birthdays"][generation].append(entry)
-                # Sort by day
-                data["Birthdays"][generation].sort(key=lambda x: int(re.findall(r"\d+", x)[0]))
+            birthdays = data.setdefault("Birthdays", {})
+            lst = birthdays.setdefault(generation, [])
         else:
-            # Wedding or any other flat event
-            if event not in data:
-                data[event] = []
-            if entry not in data[event]:
-                data[event].append(entry)
-                data[event].sort(key=lambda x: int(re.findall(r"\d+", x)[0]))
+            lst = data.setdefault(event, [])
 
-        #  Save JSON 
+        # Add current entry if missing
+        if entry not in lst:
+            lst.append(entry)
+
+        # Sort by day
+        lst_sorted = sorted(lst, key=lambda x: int(re.findall(r"\d+", x)[0]))
+        if event.lower() == "birthdays":
+            birthdays[generation] = lst_sorted
+        else:
+            data[event] = lst_sorted
+
+        # --- Step 5: Save JSON ---
         script_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return {"message": f"script updated successfully in {script_file}"}
+
     except Exception as e:
         logger.exception("Error updating script: %s", str(e))
         raise Exception("Failed to update script") from e
-
-
 
 def json_to_script_txt(json_file, txt_file):
     try:
@@ -125,8 +142,8 @@ def ai_script_maker(month):
         You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.
 
         CRITICAL RULES:
-        1. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
-        2. YOU MUST END EACH CELEBRANT LINE WITH <cend>
+        1. YOU MUST END EACH CELEBRANT LINE WITH <cend>
+        2. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
         3. Every person must be announced with their full name and exact date
         4. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
         5. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")
@@ -158,7 +175,6 @@ def ai_script_maker(month):
             model="gemini-2.5-flash-lite-preview-09-2025",
             contents=prompt
         )
-        print("llm response = %s", str(response))
         # Save AI narration
         ai_script_path = Path("./data") / month / "ai_script.txt"
         ai_script_path.write_text(response.text, encoding="utf-8")

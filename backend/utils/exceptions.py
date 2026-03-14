@@ -9,3 +9,7 @@ class LLMError(VideoGenerationError):
 class TTSError(VideoGenerationError):
     """Exception for TTS-related failures"""
     pass
+
+class VIDError(VideoGenerationError):
+    """Exception for video-related failures"""
+    pass

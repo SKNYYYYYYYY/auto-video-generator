@@ -5,7 +5,6 @@ from utils.lib import image_saver, video_generator
 from utils.logger_config import get_logger
 from utils.exceptions import VideoGenerationError
 from fastapi.middleware.cors import CORSMiddleware
-
 app = FastAPI()
 logger = get_logger(__name__)
 
