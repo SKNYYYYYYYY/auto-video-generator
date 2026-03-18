@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from utils.slides.video_maker import generate_video
+from slides.video_maker import generate_video
 from fastapi import HTTPException
 
 from utils.logger_config import get_logger

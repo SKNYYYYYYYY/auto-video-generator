@@ -8,9 +8,9 @@ import smtplib
 from email.message import EmailMessage
 from moviepy import ImageClip, TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
 # from slides.email_sender import send_email_with_video
-# from utils.logger_config import get_logger
+from utils.logger_config import get_logger
 
-# logger = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # Image Processing Functions
@@ -51,24 +51,17 @@ def create_slide(background_clip, celebrant_img, details, duration=10):
     photo = extend_bottom_clip(photo, extend_pixels=93)
     photo = photo.with_position((86, 94)).with_duration(duration)
 
+
     #  Name text
     name_text = TextClip(
-        text=details["name"][1],
-        font="fonts/DejaVuSans.ttf",
-        font_size=120,
-        color="white"
-    ).with_position(("right", 800)).with_duration(duration)
-
-    #  Date text
-    date_text = TextClip(
-        text=details["name"][0],
+        text=details[1],
         font="fonts/DejaVuSans.ttf",
         font_size=50,
         color="white"
     ).with_position(("center", 800)).with_duration(duration)
 
     #  Composite everything
-    clips = [background, photo, name_text, date_text]
+    clips = [background, photo, name_text]
 
     final = CompositeVideoClip(clips)
     return final
@@ -140,9 +133,9 @@ def send_email_with_video(sender_email, sender_password, recipient_email, subjec
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:  # Use your SMTP server and port
             smtp.login(sender_email, sender_password)
             smtp.send_message(msg)
-        print("Email sent successfully to ", recipient_email)
+        logger.info(f"Email sent successfully to {recipient_email}")
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.error(f"Error sending email: {e}")
 
 
 
@@ -169,9 +162,8 @@ def generate_video(month, tts_response, ABS_DIR):
 
         t = time()
         video_path = os.path.join(ABS_DIR, f"{month}_celebration_video.mp4")
-        final_video.write_videofile(video_path, codec= "libx264",threads=4, fps=24)
-        print(f"write_videofile took {time()-t:.2f}s")
-
+        final_video.write_videofile(video_path, fps=24)
+        logger.info(f"write_videofile took {time()-t:.2f}s")
         recipient_email="newtonkiprono19@gmail.com"
         email_response = send_email_with_video(
     sender_email="newtonsigei13105@gmail.com",
@@ -181,15 +173,7 @@ def generate_video(month, tts_response, ABS_DIR):
     body="Hi, your video is ready! See the attachment.",
     video_path= video_path # path to  generated video
 )
-        return {"message": f"Video generated successfully and sent to {recipient_email}"}
+        return {'message': 'Video generated successfully and sent to {recipient_email} '}
     except Exception as e:
-        print(f"Error generating video for month {month}: {e}")
+        logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=True)
         raise Exception("Failed to generate video") from e
-    
-if __name__ == "__main__":
-    month = "May"
-    tts_response = [{'phrase': 'celebrate Flora Chepchirchir.', 'start_time': 22.488, 'end_time': 24.206}, {'phrase': 'on May 17th.', 'start_time': 31.497, 'end_time': 32.612}, {'phrase': 'joy and happiness.', 'start_time': 38.626, 'end_time': 39.775}]
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    ABS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data", month))
-    video_response = generate_video(month, tts_response, ABS_DIR)
-    print(video_response)
