@@ -11,7 +11,7 @@ from utils.logger_config import LOG_DIR, get_logger
 load_dotenv()
 logger = get_logger(__name__)
 
-def audio_generator(text, voice_id="21m00Tcm4TlvDq8ikWAM", output_file="voiceover.mp3"):
+def audio_generator(text, voice_id="JBFqnCBsd6RMkjVDRZzb", output_file="voiceover.mp3"):
     """
     Converts text to speech using ElevenLabs API and returns alignment info.
     Audio is saved to the specified output_file.
