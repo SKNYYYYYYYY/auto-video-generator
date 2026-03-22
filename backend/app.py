@@ -1,4 +1,5 @@
 import uvicorn
+import argparse
 import os
 from fastapi import FastAPI, Form, File, UploadFile, Path, HTTPException
 from utils.lib import image_saver, video_generator
@@ -8,6 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 logger = get_logger(__name__)
 
+parser = argparse.ArgumentParser(usage="Run environment: dev, test, prod")
+parser.add_argument("--env", choices=["dev", "prod", "test"], required=True)
+args = parser.parse_args()
+env = args.env
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,13 +34,13 @@ async def upload(
   type: str = Form(...),
   image: UploadFile = File(...)
 ):
-  response = await image_saver(name, month, date, generation, type, image)
+  response = await image_saver(name, month, date, generation, type, image, env)
   return response
 
 @app.get("/generate-video/{month}")
-async def generate_video(month: str = Path(...)):  # Added type hint
+async def generate_video(month: str = Path(...)): 
     try:
-        response = await video_generator(month)
+        response = await video_generator(month, env)
         logger.info("Video generated successfully for month: %s", month)
         return {"message": "Video generated successfully", "response": response}
     except VideoGenerationError as e:
@@ -46,5 +51,6 @@ async def generate_video(month: str = Path(...)):  # Added type hint
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 if __name__=='__main__':
+  logger.info("Application running in %s environment", env) 
   port = int(os.environ.get("PORT", 8000))  
   uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
