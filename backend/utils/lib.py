@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from slides.video_maker import generate_video
+# from slides.video_maker import generate_video
 from fastapi import HTTPException
 
 from utils.logger_config import get_logger
@@ -10,13 +10,16 @@ from utils.exceptions import LLMError, TTSError, VIDError
 
 logger = get_logger(__name__)
 
-async def image_saver(name, month, date, generation, event, image):
+async def image_saver(name, month, date, generation, event, image, env):
   try:
     celebrant_image = f"{generation}gen_{date}_{month}_{name}.png"
     if image:
       dir_path = Path("./data") / month
       dir_path.mkdir(parents=True, exist_ok=True)
-      
+       # create base folder
+      bg_path = Path("./data/_Background")
+      bg_path.mkdir(parents=True, exist_ok=True)
+
       # create pics folder
       (dir_path / "pics").mkdir(parents=True, exist_ok=True)
       
@@ -34,7 +37,7 @@ async def image_saver(name, month, date, generation, event, image):
     logger.exception("Error saving image or updating script")
     raise Exception("Failed to save image or update script") from e
 
-async def video_generator(month):
+async def video_generator(month, env):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     ABS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data", month))
     try:
