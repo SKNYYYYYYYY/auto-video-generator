@@ -6,187 +6,215 @@ from dotenv import load_dotenv
 from google import genai
 from utils.logger_config import get_logger
 import shutil
+import re
 from utils.exceptions import LLMError
 
 logger = get_logger(__name__)
 
 def raw_script_maker(script_file, event, celebrant_image, base_celebrant_source="slides/base_celebrant.png"):
-    """
-    Update the script JSON with the new celebrant, and copy base_celebrant.png
-    into the same folder as the uploaded celebrant image if it doesn't exist.
-    
-    Parameters:
-    - script_file: path to the JSON script file
-    - event: "Birthdays", "Weddings", etc.
-    - celebrant_image: path to the newly uploaded celebrant image
-    - base_celebrant_source: path to the original base_celebrant.png
-    """
-    try:
-        script_file = Path(script_file)
-        celebrant_image = Path(celebrant_image)
-        pics_dir = celebrant_image.parent  # Directory where the image is being uploaded
+	"""
+	Update the script JSON with the new celebrant, organized by generation (eldest → youngest).
+	"""
+	try:
+		script_file = Path(script_file)
+		celebrant_image = Path(celebrant_image)
+		pics_dir = celebrant_image.parent  
 
-        # --- Step 1: Copy base_celebrant.png to pics_dir if missing ---
-        base_target = pics_dir / Path(base_celebrant_source).name
-        if not base_target.exists():
-            shutil.copy(base_celebrant_source, base_target)
-            logger.info(f"Copied base celebrant to {base_target}")
+		# Step 2: Parse image filename to extract day, generation, name
+		base = celebrant_image.stem
+		gen, day, month, *name_parts = base.split("_")
+		generation = gen.replace("gen", "")
+		name = " ".join(name_parts)
+		day = int(day)
+		suffix = "th" if 11 <= day <= 13 else {1:"st",2:"nd",3:"rd"}.get(day % 10, "th")
+		entry = f"{day}{suffix} - {name}"
 
-        # --- Step 2: Prepare JSON entry ---
-        base = celebrant_image.stem
-        gen, day, month, *name_parts = base.split("_")
-        generation = gen.replace("gen", "")
-        name = " ".join(name_parts)
+		# Step 3: Load JSON
+		if script_file.exists():
+			data = json.loads(script_file.read_text(encoding="utf-8"))
+		else:
+			data = {}
 
-        day = int(day)
-        suffix = "th" if 11 <= day <= 13 else {1:"st",2:"nd",3:"rd"}.get(day % 10, "th")
-        entry = f"{day}{suffix} - {name}"
+		# Step 4: Organize by generation for birthdays
+		if event.lower().startswith("birth"):
+			birthdays = data.setdefault("Birthdays", {})
+			lst = birthdays.setdefault(generation, [])
+		else:
+			lst = data.setdefault(event, [])
 
-        # --- Step 3: Load existing JSON ---
-        if script_file.exists():
-            data = json.loads(script_file.read_text(encoding="utf-8"))
-        else:
-            data = {}
+		# Step 5: Add entry if missing
+		if entry not in lst:
+			lst.append(entry)
 
-        # --- Step 4: Insert entry into JSON ---
-        if event.lower() == "birthdays":
-            birthdays = data.setdefault("Birthdays", {})
-            lst = birthdays.setdefault(generation, [])
-        else:
-            lst = data.setdefault(event, [])
+		# Step 6: Sort each generation's list by day
+		lst_sorted = sorted(lst, key=lambda x: int(re.findall(r"\d+", x)[0]))
+		if event.lower().startswith("birth"):
+			birthdays[generation] = lst_sorted
+		else:
+			data[event] = lst_sorted
 
-        # Add current entry if missing
-        if entry not in lst:
-            lst.append(entry)
+		# Step 7: Sort generations (eldest → youngest)
+		if event.lower().startswith("birth"):
+			sorted_birthdays = dict(sorted(birthdays.items(), key=lambda x: int(x[0])))
+			data["Birthdays"] = sorted_birthdays
 
-        # Sort by day
-        lst_sorted = sorted(lst, key=lambda x: int(re.findall(r"\d+", x)[0]))
-        if event.lower() == "birthdays":
-            birthdays[generation] = lst_sorted
-        else:
-            data[event] = lst_sorted
+		# Step 8: Save JSON
+		script_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+		return {"message": f"script updated successfully in {script_file}"}
 
-        # --- Step 5: Save JSON ---
-        script_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        return {"message": f"script updated successfully in {script_file}"}
-
-    except Exception as e:
-        logger.exception("Error updating script: %s", str(e))
-        raise Exception("Failed to update script") from e
-
+	except Exception as e:
+		logger.exception("Error updating script: %s", str(e))
+		raise Exception("Failed to update script") from e
+		
 def json_to_script_txt(json_file, txt_file):
-    try:
-        json_file = Path(json_file)
-        txt_file = Path(txt_file)
+	try:
+		json_file = Path(json_file)
+		txt_file = Path(txt_file)
 
-        if not json_file.exists():
-            raise FileNotFoundError(f"{json_file} does not exist")
+		if not json_file.exists():
+			raise FileNotFoundError(f"{json_file} does not exist")
 
-        data = json.loads(json_file.read_text(encoding="utf-8"))
-        lines = []
+		data = json.loads(json_file.read_text(encoding="utf-8"))
+		lines = []
 
-        # Handle Birthdays
-        birthdays = data.get("Birthdays", {})
-        if birthdays:
-            for gen in sorted(birthdays.keys(), key=lambda x: int(re.findall(r"\d+", x)[0])):
-                lines.append("Birthdays")
-                lines.append(f"{gen} generation")
-                for entry in birthdays[gen]:
-                    lines.append(entry)
-                lines.append("") 
+		# Handle Birthdays
+		birthdays = data.get("Birthdays", {})
+		if birthdays:
+			for gen in sorted(birthdays.keys(), key=lambda x: int(re.findall(r"\d+", x)[0])):
+				lines.append("Birthdays")
+				lines.append(f"{gen} generation")
+				for entry in birthdays[gen]:
+					lines.append(entry)
+				lines.append("") 
 
-        # Handle other events (e.g., Wedding)
-        for event, entries in data.items():
-            if event == "Birthdays":
-                continue
-            if entries:
-                lines.append(event.capitalize())
-                for entry in entries:
-                    lines.append(entry)
-                lines.append("") 
+		# Handle other events (e.g., Wedding)
+		for event, entries in data.items():
+			if event == "Birthdays":
+				continue
+			if entries:
+				lines.append(event.capitalize())
+				for entry in entries:
+					lines.append(entry)
+				lines.append("") 
 
-        # Save to script.txt
-        text_content = "\n".join(lines)
-        txt_file.write_text(text_content, encoding="utf-8")
-        return text_content
+		# Save to script.txt
+		text_content = "\n".join(lines)
+		txt_file.write_text(text_content, encoding="utf-8")
+		return text_content
 
-    except Exception as e:
-        logger.exception("Error converting JSON to text:%s", str(e))
-        raise Exception("Failed to convert JSON to text") from e
+	except Exception as e:
+		logger.exception("Error converting JSON to text:%s", str(e))
+		raise Exception("Failed to convert JSON to text") from e
+
+def validate_cend_count(ai_text, celebrants_no):
+	cend_no = len(re.findall("<cend>", ai_text))
+	logger.debug(f"<cend> markers = {cend_no}")
+	return cend_no == celebrants_no
+
+def generate_ai_script(month, retries=10):
+
+	from pathlib import Path
+
+	load_dotenv()
+	api_key = os.getenv("GEMINI_API_KEY")
+
+	if not api_key:
+		return {"error": "Missing AI API key"}
+
+	client = genai.Client(api_key=api_key)
+
+	try:
+		# Paths
+		script_json = Path("./data") / month / "script.json"
+		with open(script_json, "r") as f:
+			script_txt = json.load(f)
+
+		# Convert JSON → plain text
+		# text_data = json_to_script_txt(script_json, script_txt)
+		# if isinstance(text_data, dict) and "Error" in text_data:
+		# 	return text_data
+		celebrants_file = Path("./data") / month / "script.json"
+		with open(celebrants_file, "r") as f:
+			celebrants = json.load(f)
+		for v in celebrants.values():
+			celebrants_no = sum((len(g))for g in v.values())
+		logger.debug(f"Number of celebrants for {month} is {celebrants_no}")
+		# Prompt for structured narration with markers
+		prompt = f"""
+		You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.
+
+		CRITICAL RULES:
+		1. End each celebrant line with <cend>.
+		2. Use the actual names and dates from the data provided—never use placeholders like "our dear family member".
+		3. Every person must be announced with their full name, exact date, and generation context where available (e.g., "daughter of", "grandson of").
+		4. Format each birthday line as: "On [Day], we celebrate [Full Name]".
+		5. Format each anniversary/wedding line as: "On [Month] [Day], we celebrate [Full Name] and [Partner Name]".
+
+		STRUCTURE:
+		- Opening: One warm sentence welcoming the month and the celebrations ahead.
+		- For each generation present in the data:
+			* Include a brief sentence introducing the generation in quotes.
+			* List each person with their date, full name, and relationship context.
+			* Use natural variety in phrasing: "we celebrate", "best wishes go to", "we honor", "birthday cheers go to", "we cheer for".
+		- Closing: Include a section celebrating anniversaries/weddings with the couple's names and date.
+		- 
+
+		STYLE REQUIREMENTS:
+		- Write in flowing paragraphs, not bullet points.
+		- Use conversational, spoken-word friendly language.
+		- Include emotional warmth while keeping it natural.
+		- Do NOT include stage directions or instructions.
+		- Do NOT use generic placeholders—mention every actual name and date from the data.
+
+		DATA TO PROCESS:
+		the layout is:
+		{{
+			"Birthdays": {{
+				"generation": [
+					"date - name"
+				]
+			}},
+			"Weddings": {{
+				"generation": [
+					"date - couple names"
+				]
+			}}
+		}}
+		A MUST RULE! the number of <cend> texts  must equal to the number of  celebrants, so in this case, the text should have a total of {celebrants_no} <cend>
+		{script_txt}
+
+		Generate the script now, ensuring every single person and couple in the data is mentioned with their exact date and generation context.
+		"""
+
+		# Generate AI script
+		response = client.models.generate_content(
+			model="gemini-2.5-flash-lite", #gemini-2.5-flash-lite-preview-09-2025",
+			contents=prompt
+		)
 
 
-def ai_script_maker(month):
 
-    from pathlib import Path
+		# retry atleast 3 times if <cend> markers are not same number as participants
+		if validate_cend_count(response.text, celebrants_no=celebrants_no):
+			# Save AI narration
+			ai_script_path = Path("./data") / month / "ai_script.txt"
+			ai_script_path.write_text(response.text, encoding="utf-8")
 
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
+			return {
+			"is_successful": True,
+			"message": "AI script created successfully",
+			"script_path": str(ai_script_path),
+			"ai_response": response.text
+		}
+		
+		if retries <= 0:
+			logger.info("Max LLM retries reached")
+			return {"is_successful": False, "ai_text": None}
 
-    if not api_key:
-        return {"error": "Missing AI API key"}
+		return generate_ai_script(month, retries - 1)
 
-    client = genai.Client(api_key=api_key)
-
-    try:
-        # Paths
-        script_json = Path("./data") / month / "script.json"
-        script_txt = script_json.with_suffix(".txt")
-
-        # Convert JSON → plain text
-        text_data = json_to_script_txt(script_json, script_txt)
-        if isinstance(text_data, dict) and "Error" in text_data:
-            return text_data
-
-        # Prompt for structured narration with markers
-        prompt = f"""
-        You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.
-
-        CRITICAL RULES:
-        1. YOU MUST END EACH CELEBRANT LINE WITH <cend>
-        2. Use ACTUAL NAMES AND DATES from the data provided - never use placeholders like "our dear family member" or "our precious little one"
-        3. Every person must be announced with their full name and exact date
-        4. Format each birthday as: "On [Month] [Day], we celebrate [Full Name]"
-        5. Add generation context where provided (e.g., "daughter of", "son of", "grandson of")
-        
-
-        STRUCTURE:
-        - Opening: One warm sentence welcoming the month and the celebrations ahead
-        - For each generation present in the data:
-        * Brief transitional sentence introducing the generation in quotes
-        * List each person with their date, full name, and relationship context
-        * Use natural variety: "we celebrate", "best wishes go to", "we honor", "birthday cheers go to", "we cheer for"
-        - Closing: If anniversaries/weddings exist, add a final section celebrating couples with date and both names
-
-        STYLE REQUIREMENTS:
-        - Write in flowing paragraphs, NOT bullet points
-        - Use conversational, spoken-word friendly language
-        - Include emotional warmth but keep it natural
-        - NO stage directions or instructions
-        - NO generic placeholders - use every actual name provided
-
-        DATA TO PROCESS:
-        {text_data}
-
-        Generate the script now, ensuring every single person in the data is mentioned by name with their specific date.
-        """
-
-        # Generate AI script
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite-preview-09-2025",
-            contents=prompt
-        )
-        # Save AI narration
-        ai_script_path = Path("./data") / month / "ai_script.txt"
-        ai_script_path.write_text(response.text, encoding="utf-8")
-
-        return {
-            "message": "AI script created successfully",
-            "script_path": str(ai_script_path),
-            "ai_response": response.text
-        }
-
-    except Exception as e:
-        logger.error("Error creating AI script: %s", str(e), exc_info=True)
-        if isinstance(e, LLMError):
-            raise
-        raise LLMError(f"Failed to create AI script: {str(e)}") from e
+	except Exception as e:
+		logger.error("Error creating AI script: %s", str(e), exc_info=True)
+		if isinstance(e, LLMError):
+			raise
+		raise LLMError(f"Failed to create AI script: {str(e)}") from e
