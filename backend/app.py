@@ -53,4 +53,4 @@ async def generate_video(month: str = Path(...)):
 if __name__=='__main__':
   logger.info("Application running in %s environment", env) 
   port = int(os.environ.get("PORT", 8000))  
-  uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+  uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True,)

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import cv2
 import numpy as np
 import re
@@ -6,6 +7,7 @@ from time import time
 from PIL import Image, ImageOps
 import smtplib
 from email.message import EmailMessage
+from slides.email_sender import send_email_with_video
 from moviepy import ImageClip, TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
 # from slides.email_sender import send_email_with_video
 from utils.logger_config import get_logger
@@ -53,8 +55,9 @@ def create_slide(background_clip, celebrant_img, details, duration=10):
 
 
     #  Name text
+    logger.debug(f"date_name = {details}")
     name_text = TextClip(
-        text=details[1],
+        text="details[1]",
         font="fonts/DejaVuSans.ttf",
         font_size=50,
         color="white"
@@ -93,7 +96,6 @@ def generate_slides_from_dir(pic_dir, bg_file, audio_file, duration_list):
 
         # Name for slide taken from file name
         date_name = [re.search(r'gen_(\d)', os.path.splitext(celeb_file)[0]).group(1), os.path.splitext(celeb_file)[0].split("_", 3)[3]]
-
         slide = create_slide(
             background_clip=bg_clip,
             celebrant_img=cropped_img,
@@ -111,45 +113,50 @@ def generate_slides_from_dir(pic_dir, bg_file, audio_file, duration_list):
     return final_video
 
 
-def send_email_with_video(sender_email, sender_password, recipient_email, subject, body, video_path):
+
+
+def parse_time(value):
     """
-    Sends an email with the generated video attached.
+    Convert mixed format time values to seconds (float).
+    Accepts:
+        - 17.48        -> float seconds
+        - "17.48"      -> float seconds
+        - "01.01.201"  -> mm.ss.mmm format
+        - "01:01.201"  -> mm:ss.mmm format (optional)
     """
-    # Create the email
-    msg = EmailMessage()
-    msg['From'] = sender_email
-    msg['To'] = recipient_email
-    msg['Subject'] = subject
-    msg.set_content(body)
+    # If already a number
+    if isinstance(value, (int, float)):
+        return float(value)
+    
+    # If string uses colon mm:ss.mmm
+    if ":" in value:
+        mins, rest = value.split(":")
+        return int(mins) * 60 + float(rest)
+    
+    # If string uses dots as mm.ss.mmm
+    parts = re.split(r'\.', value)
+    if len(parts) == 3:
+        mins, secs, millis = parts
+        return int(mins) * 60 + int(secs) + float(f"0.{millis}")
+    
+    # Otherwise just parse as float
+    return float(value)
 
-    # Attach the video
-    with open(video_path, 'rb') as f:
-        video_data = f.read()
-        video_name = os.path.basename(video_path)
-        msg.add_attachment(video_data, maintype='video', subtype='mp4', filename=video_name)
-
-    # Send the email via SMTP
+def generate_video(month, tts_response, ABS_DIR, env):
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:  # Use your SMTP server and port
-            smtp.login(sender_email, sender_password)
-            smtp.send_message(msg)
-        logger.info(f"Email sent successfully to {recipient_email}")
-    except Exception as e:
-        logger.error(f"Error sending email: {e}")
-
-
-
-
-def generate_video(month, tts_response, ABS_DIR):
-    try:
-
-        BG_PIC_FILE = os.path.join(ABS_DIR, "pics", "base_celebrant.png")
+        DATA_DIR = Path(ABS_DIR).parent
+        BG_PIC_FILE = DATA_DIR / "_Background" / "bg_brown_1.png"
         AUDIO_FILE = os.path.join(ABS_DIR, "voiceover.mp3")  # optional
         PIC_DIR=os.path.abspath(os.path.join(ABS_DIR, "pics"))
 
         timestamps = []
         prev = 0
         for phrase in tts_response:
+            # Dev
+            if env == "dev":
+              phrase["end_time"] = parse_time(phrase["end_time"])
+            end_time = phrase["end_time"]
+            duration = end_time - prev + 1
             duration = phrase["end_time"] - prev + 1  # add 1s buffer after each phrase
             timestamps.append(duration)
             prev = phrase["end_time"]
@@ -166,14 +173,14 @@ def generate_video(month, tts_response, ABS_DIR):
         logger.info(f"write_videofile took {time()-t:.2f}s")
         recipient_email="newtonkiprono19@gmail.com"
         email_response = send_email_with_video(
-    sender_email="newtonsigei13105@gmail.com",
-    sender_password="xquc hvnp zjks chgi",
-    recipient_email=recipient_email,
-    subject="Your Generated Video",
-    body="Hi, your video is ready! See the attachment.",
-    video_path= video_path # path to  generated video
-)
-        return {'message': 'Video generated successfully and sent to {recipient_email} '}
+          sender_email="newtonsigei13105@gmail.com",
+          sender_password="xquc hvnp zjks chgi",
+          recipient_email=recipient_email,
+          subject="Your Generated Video",
+          body="Hi, your video is ready! See the attachment.",
+          video_path= video_path # path to  generated video
+      )
+        return {'message': f'Video generated successfully and sent to {recipient_email} '}
     except Exception as e:
         logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=True)
         raise Exception("Failed to generate video") from e

@@ -73,7 +73,7 @@ async def video_generator(month, env):
       try:
           # generate the video slides and compile the final video
           tts_response =  [{'phrase': 'of [Getrude]', 'end_time': 17.48}, {'phrase': 'to [Richard]', 'end_time': 21.79}, {'phrase': 'to [X]', 'end_time': 28.225}, {'phrase': 'to [X]', 'end_time': 33.377}, {'phrase': 'to [X]', 'end_time': 39.409}, {'phrase': 'to [X]', 'end_time': 50.049}, {'phrase': 'to [X]', 'end_time': 55.569}, {'phrase': 'to [X]', 'end_time': '01.01.201'}, {'phrase': 'to [X]', 'end_time': '01.08.185'}, {'phrase': 'to [X]', 'end_time': '01.14.625'}, {'phrase': 'to [X]', 'end_time': '01.22.404'}, {'phrase': 'to [X]', 'end_time': '01.26.345'}]
-          vid_response = generate_video(month, tts_response , ABS_DIR)
+          vid_response = generate_video(month, tts_response , ABS_DIR, env)
           return vid_response
       except Exception as e:
           logger.error("Video generation failed: %s", str(e), exc_info=True)
