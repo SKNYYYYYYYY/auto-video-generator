@@ -9,9 +9,11 @@ from utils.exceptions import LLMError, TTSError, VIDError
 
 logger = get_logger(__name__)
 
-async def image_saver(name, month, date, generation, event, image, env):
+async def image_saver(name, month, date, generation, event, image, relation):
   try:
-    celebrant_image = f"{generation}gen_{date}_{month}_{name}.png"
+
+    celebrant_image = f"{generation}gen_{date}_{month}_{name}_{relation}.png" if relation else f"{generation}gen_{date}_{month}_{name}.png"
+    logger.debug("Generated celebrant image filename: %s", celebrant_image)
     if image:
       dir_path = Path("./data") / month
       dir_path.mkdir(parents=True, exist_ok=True)

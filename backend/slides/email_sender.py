@@ -24,7 +24,7 @@ def send_email_with_video(sender_email, sender_password, recipient_email, subjec
 
     # Send the email via SMTP
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:  # Use your SMTP server and port
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(sender_email, sender_password)
             smtp.send_message(msg)
         logger.info(f"Email sent successfully to {recipient_email}")

@@ -1,0 +1,15 @@
+DejaVu Serif - 75
+Date: (1443, 411)
+<=13 characters
+2G
+Name:  (1474, 987)
+
+3G
+rel: (1449, 582)
+
+=>13 characters
+2G
+Name:  (1438, 405)
+
+3G
+rel: (1440, 634)

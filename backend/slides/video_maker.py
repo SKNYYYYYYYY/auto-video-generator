@@ -5,12 +5,13 @@ import numpy as np
 import re
 from time import time
 from PIL import Image, ImageOps
-import smtplib
 from email.message import EmailMessage
 from slides.email_sender import send_email_with_video
 from moviepy import ImageClip, TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
+from datetime import datetime
+
 # from slides.email_sender import send_email_with_video
-from utils.logger_config import get_logger
+from utils.logger_config import BASE_DIR, get_logger
 
 logger = get_logger(__name__)
 
@@ -37,12 +38,39 @@ def extend_bottom_clip(img_clip, extend_pixels=20):
     extended_img = cv2.resize(img, (w, new_h), interpolation=cv2.INTER_LINEAR)
     return ImageClip(extended_img).with_duration(img_clip.duration)
 
+def parse_filename(celeb_file):
+    filename = os.path.splitext(celeb_file)[0]
+    parts = filename.split("_")
+
+    date = parts[1]
+
+    name_parts = []
+    relation_parts = []
+    relation_key = None
+
+    for part in parts[3:]:
+        if part.startswith("s-o") or part.startswith("d-o"):
+            relation_key = part[:3]  # "s-o" or "d-o"
+            relation_parts.append(part[4:])  # remove "s-o " or "d-o "
+        elif relation_key:
+            relation_parts.append(part)
+        else:
+            name_parts.append(part)
+
+    name = " ".join(name_parts)
+
+    if relation_key:
+        relation = relation_key.replace("-", "/") + " " + " --> ".join(relation_parts)
+        return [date, name, relation]
+    else:
+        return [date, name]
+    
 # Slide Creation
 
-def create_slide(background_clip, celebrant_img, details, duration=10):
-    # 1️⃣ Background
+def create_slide(background_clip, celebrant_img, details, font, duration=10):
+    # Background
     background = background_clip.with_duration(duration)
-    # 2️⃣ Celebrant photo
+    # Celebrant photo
     FRAME_WIDTH, FRAME_HEIGHT = 880, 880
 
     photo = ImageClip(np.array(celebrant_img))
@@ -53,25 +81,58 @@ def create_slide(background_clip, celebrant_img, details, duration=10):
     photo = extend_bottom_clip(photo, extend_pixels=93)
     photo = photo.with_position((86, 94)).with_duration(duration)
 
+    logger.debug(f"Celebrant details: {details}")
+    date = details["celebrant"][0]
+    x, y = 1450, 930
+    date_text = TextClip(
+        text= date,
+        font=font,
+        font_size=85,
+        size=(None, 120),
+        color="#9b8a7c"
+    ).with_position((x,y)).with_duration(duration)
+
+    suffix = "th" if 11 <= int(date) <= 13 else {1:"st",2:"nd",3:"rd"}.get(int(date) % 10, "th")
+    date_suffix = TextClip(
+        text= suffix,
+        font=font,
+        font_size=40,
+        size=(None, 50),
+        color="#9b8a7c"
+    ).with_position((x + date_text.w, y - 1)).with_duration(duration)
 
     #  Name text
-    logger.debug(f"date_name = {details}")
+    font_size=85
     name_text = TextClip(
-        text="details[1]",
-        font="fonts/DejaVuSans.ttf",
-        font_size=50,
-        color="white"
-    ).with_position(("center", 800)).with_duration(duration)
+        text=details["celebrant"][1],
+        font=font,
+        font_size=font_size,
+        color="#9b8a7c",
+        size=(None, font_size + 40)
+    ).with_position((1100, 380)).with_duration(duration)
 
-    #  Composite everything
-    clips = [background, photo, name_text]
+    relation = details["celebrant"][2] if len(details["celebrant"]) > 2 else None
+
+    if relation:
+        relation_text = TextClip(
+            text=details["celebrant"][2],
+            font=font,
+            font_size=40,
+            color="#9b8a7c",
+            size=(None, 50)
+        ).with_position((1100, 380 + 140)).with_duration(duration)
+        #  Composite everything
+        clips = [background, photo, name_text, relation_text, date_text, date_suffix]
+
+    else:
+        clips = [background, photo, name_text, date_text, date_suffix]
 
     final = CompositeVideoClip(clips)
     return final
 
 # Process Folder
 
-def generate_slides_from_dir(pic_dir, bg_file, audio_file, duration_list):
+def generate_slides_from_dir(pic_dir, bg_file, audio_file, font_file,duration_list):
     
     # Gather all celebrant images (exclude background)
     celeb_files = sorted(
@@ -95,11 +156,13 @@ def generate_slides_from_dir(pic_dir, bg_file, audio_file, duration_list):
         cropped_img = crop_to_rectangle(celeb_path)
 
         # Name for slide taken from file name
-        date_name = [re.search(r'gen_(\d)', os.path.splitext(celeb_file)[0]).group(1), os.path.splitext(celeb_file)[0].split("_", 3)[3]]
+        date_name = parse_filename(celeb_file)
+        
         slide = create_slide(
             background_clip=bg_clip,
             celebrant_img=cropped_img,
-            details={"name": date_name},
+            details={"celebrant": date_name},
+            font=font_file,
             duration=duration_list[i]
         )
         clips.append(slide)
@@ -144,10 +207,14 @@ def parse_time(value):
 
 def generate_video(month, tts_response, ABS_DIR, env):
     try:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        FONT_PATH = os.path.join(BASE_DIR, "fonts",  "DejaVuSerif.ttf")
         DATA_DIR = Path(ABS_DIR).parent
         BG_PIC_FILE = DATA_DIR / "_Background" / "bg_brown_1.png"
-        AUDIO_FILE = os.path.join(ABS_DIR, "voiceover.mp3")  # optional
+        AUDIO_FILE = os.path.join(ABS_DIR, "voiceover.mp3")  # optionall
         PIC_DIR=os.path.abspath(os.path.join(ABS_DIR, "pics"))
+
+        
 
         timestamps = []
         prev = 0
@@ -164,10 +231,12 @@ def generate_video(month, tts_response, ABS_DIR, env):
             pic_dir=PIC_DIR,
             bg_file=BG_PIC_FILE,
             audio_file=AUDIO_FILE,
+            font_file=FONT_PATH,
             duration_list=timestamps
         )
 
         t = time()
+        created_at = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         video_path = os.path.join(ABS_DIR, f"{month}_celebration_video.mp4")
         final_video.write_videofile(video_path, fps=24)
         logger.info(f"write_videofile took {time()-t:.2f}s")
@@ -182,5 +251,5 @@ def generate_video(month, tts_response, ABS_DIR, env):
       )
         return {'message': f'Video generated successfully and sent to {recipient_email} '}
     except Exception as e:
-        logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=True)
+        logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=False)
         raise Exception("Failed to generate video") from e

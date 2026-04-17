@@ -5,7 +5,7 @@ import re
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
 from fastapi import HTTPException
-from utils.logger_config import LOG_DIR, get_logger
+from utils.logger_config import get_logger
 
 
 load_dotenv()

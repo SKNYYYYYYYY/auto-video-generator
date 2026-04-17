@@ -11,7 +11,7 @@ from utils.exceptions import LLMError
 
 logger = get_logger(__name__)
 
-def raw_script_maker(script_file, event, celebrant_image, base_celebrant_source="slides/base_celebrant.png"):
+def raw_script_maker(script_file, event, celebrant_image):
 	"""
 	Update the script JSON with the new celebrant, organized by generation (eldest → youngest).
 	"""
