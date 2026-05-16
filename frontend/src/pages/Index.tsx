@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { MonthSelector } from "@/components/MonthSelector";
 import Cropper from "react-easy-crop";
 import { getCroppedImg, blobToFile } from "../lib/utils";
 import {
@@ -10,11 +11,13 @@ import {
   Calendar,
   User,
   Type,
+  Loader2,
 } from "lucide-react";
 import GenerationFields from "@/components/GenerationFields";
 import ImageGallery from "@/components/ImageGallery";
 import VideoPreview from "@/components/VideoPreview";
 import StatusBox from "@/components/StatusBox";
+import { VideoProgress } from "@/components/VideoProgress";
 
 const MONTHS = [
   "January","February","March","April","May","June",
@@ -91,6 +94,15 @@ const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([
+  { id: 'llm', label: 'Generating script with AI', status: 'pending' },
+  { id: 'tts', label: 'Creating voiceover', status: 'pending' },
+  { id: 'slideshow', label: 'Building slideshow', status: 'pending' },
+  { id: 'audio', label: 'Mixing audio', status: 'pending' },
+]);
+const [currentStep, setCurrentStep] = useState<string>('');
+
   const handleCropConfirm = async () => {
     if (!imagePreview || !croppedAreaPixels) return;
 
@@ -209,21 +221,88 @@ const handleUpload = async () => {
   }
   };
  
-  const handleGenerateVideo = async () => {
-    setGenerating(true);
-    setVideoStatus(null);
-    try {
-      const res = await fetch(`${BASE_URL}/generate-video/${videoMonth}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Video generation failed");
-      setVideoStatus({ success: true, data });
-      if (data.video_url) setVideoUrl(data.video_url);
-    } catch (e: any) {
-      setVideoStatus({ error: e.message });
-    } finally {
+const handleGenerateVideo = async () => {
+  setGenerating(true);
+  setVideoStatus(null);
+  
+  // Reset progress steps
+  setProgressSteps([
+    { id: 'llm', label: 'Generating script with AI', status: 'pending' },
+    { id: 'tts', label: 'Creating voiceover', status: 'pending' },
+    { id: 'slideshow', label: 'Building slideshow', status: 'pending' },
+    { id: 'audio', label: 'Mixing audio', status: 'pending' },
+  ]);
+  
+  try {
+    // Use EventSource for SSE (Server-Sent Events)
+    const eventSource = new EventSource(`${BASE_URL}/generate-video-stream/${videoMonth}`);
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Progress update:", data);
+      
+      switch (data.type) {
+        case 'step_start':
+          setProgressSteps(prev => prev.map(step => 
+            step.id === data.step 
+              ? { ...step, status: 'processing', message: data.message, timestamp: new Date() }
+              : step
+          ));
+          setCurrentStep(data.step);
+          break;
+          
+        case 'step_complete':
+          setProgressSteps(prev => prev.map(step => 
+            step.id === data.step 
+              ? { ...step, status: 'completed', message: data.message, timestamp: new Date() }
+              : step
+          ));
+          break;
+          
+        case 'step_error':
+          setProgressSteps(prev => prev.map(step => 
+            step.id === data.step 
+              ? { ...step, status: 'error', message: data.error, timestamp: new Date() }
+              : step
+          ));
+          setVideoStatus({ error: data.error });
+          break;
+          
+        case 'complete':
+          setVideoStatus({ success: true, data: data.result });
+          if (data.result.video_url) setVideoUrl(data.result.video_url);
+          eventSource.close();
+          setGenerating(false);
+          break;
+          
+        case 'progress':
+          // For detailed progress (e.g., TTS generation progress)
+          if (data.step === 'tts' && data.progress) {
+            setProgressSteps(prev => prev.map(step => 
+              step.id === 'tts'
+                ? { ...step, message: `Generating: ${data.progress}% complete` }
+                : step
+            ));
+          }
+          break;
+      }
+    };
+    
+    eventSource.onerror = (error) => {
+      console.error("EventSource failed:", error);
+      eventSource.close();
+      setVideoStatus({ error: "Connection lost. Please try again." });
       setGenerating(false);
-    }
-  };
+    };
+    
+    // Store eventSource to close on unmount
+    return () => eventSource.close();
+    
+  } catch (e: any) {
+    setVideoStatus({ error: e.message });
+    setGenerating(false);
+  }
+};
   
   console.log("annive = ", isAnniversary)
     const isValid =
@@ -372,62 +451,19 @@ const handleUpload = async () => {
             </div>
 
           {/* Month Grid */}
-            <div className="relative">
+          <div>
               <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                <Calendar className="w-3 h-3 inline mr-1" />
                 Month
               </label>
-
-              {/* Trigger (looks like select) */}
-              <button
-                type="button"
-                onClick={() => setMonthOpen(!monthOpen)}
-                className="
-                  w-full px-4 py-3 bg-secondary border border-border
-                  rounded-xl text-left flex justify-between items-center
-                  hover:border-primary/40 transition-all
-                "
-              >
-                <span>
-                  {form.month || "Select month"}
-                </span>
-                <span className="text-muted-foreground">▾</span>
-              </button>
-
-              {/* Dropdown panel */}
-              {monthOpen && (
-                <div className="
-                  absolute z-50 mt-2 w-full p-3
-                  bg-card border border-border rounded-xl shadow-lg
-                ">
-                  <div className="grid grid-cols-3 gap-2">
-                    {MONTHS.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => {
-                          setForm({
-                            ...form,
-                            month: m,
-                            date: ""
-                          });
-                          setMonthOpen(false);
-                        }}
-                        className={`
-                          px-2 py-2 rounded-lg text-sm border transition-all
-                          ${
-                            form.month === m
-                              ? "bg-primary text-white border-primary"
-                              : "bg-secondary hover:border-primary/40"
-                          }
-                        `}
-                      >
-                        {m.slice(0, 3)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+              <MonthSelector
+                value={form.month}
+                onChange={(month) => {
+                  setForm({ ...form, month, date: "" });
+                }}
+                placeholder="Select month"
+              />
+          </div>
 
             <div className="flex gap-4 items-end">
               
@@ -641,58 +677,51 @@ const handleUpload = async () => {
         {/* Generate Tab */}
         {activeTab === "generate" && (
           <div className="panel-enter">
-            <div className="card-shine bg-card border border-border rounded-2xl p-6 sm:p-8">
+            <div className="card-shine bg-card border border-border rounded-2xl p-6 sm:p-8 overflow-visible">
               <h2 className="text-2xl font-display font-bold mb-1">Generate Video</h2>
               <p className="text-muted-foreground text-sm mb-8">
                 Compile all uploaded images for a month into a stunning video
               </p>
 
-              <div className="mb-6">
+              <div className="mb-6 relative z-50">
                 <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
                   Select Month
                 </label>
-                <select
-                  className={inputClass}
+                <MonthSelector
                   value={videoMonth}
-                  onChange={(e) => setVideoMonth(e.target.value)}
-                >
-                  {MONTHS.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() =>
-                        setForm({
-                          ...form,
-                          month: m,
-                          date: "" // resets when month changes
-                        })
-                      }
-                      className={form.month === m ? "active-class" : "default-class"}
-                    >
-                      {m.slice(0, 3)}
-                    </button>
-                  ))}
-                </select>
+                  onChange={setVideoMonth}
+                  placeholder="Choose a month for compilation"
+                />
               </div>
 
               {/* Month display card */}
-              <div className="flex items-center gap-4 p-5 bg-secondary rounded-xl border border-border mb-6">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-primary" />
+              {videoMonth && (
+                <div className="flex items-center gap-4 p-5 bg-secondary rounded-xl border border-border mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Sparkles className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-display font-bold text-foreground">{videoMonth}</p>
+                    <p className="text-xs text-muted-foreground">Compilation target</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-display font-bold text-foreground">{videoMonth}</p>
-                  <p className="text-xs text-muted-foreground">Compilation target</p>
-                </div>
-              </div>
+              )}
+
+              {/* Progress indicator while generating */}
+              {generating && (
+                <VideoProgress steps={progressSteps} />
+              )}
 
               <button
                 onClick={handleGenerateVideo}
-                disabled={uploading}
+                disabled={generating || !videoMonth}
                 className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-display font-semibold text-sm uppercase tracking-widest hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2"
               >
-                {generating  ? (
-                  <span className="spinner text-lg">◌</span>
+                {generating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
@@ -705,7 +734,6 @@ const handleUpload = async () => {
             </div>
           </div>
         )}
-
         {/* Preview Tab */}
         {activeTab === "preview" && (
           <div className="panel-enter">

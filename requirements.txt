@@ -7,3 +7,4 @@ google-genai
 elevenlabs
 moviepy
 google-generativeai 
+apscheduler==3.11.2

@@ -38,9 +38,8 @@ def audio_generator(text, voice_id="JBFqnCBsd6RMkjVDRZzb", output_file="voiceove
     if audio_bytes:
         with open(output_file, "wb") as f:
             f.write(audio_bytes)
-        logger.info(f"Audio saved to {output_file}")
     else:
-        logger.warning("No valid audio bytes to save.")
+        logger.warning("No valid voiceover audio bytes to save.")
         return
 
     return alignment

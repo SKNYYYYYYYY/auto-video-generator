@@ -256,11 +256,11 @@ def generate_video(month, tts_response, ABS_DIR, env):
         video_path = os.path.join(ABS_DIR, f"{month}_celebration_video.mp4")
         
         if os.path.exists(BG_AUDIO_DIR):
-          bg_audio = AudioFileClip(BG_AUDIO_DIR)
+          original_bg  = AudioFileClip(BG_AUDIO_DIR)
 
-          loops = int(final_video.duration / bg_audio.duration) + 1
+          loops = int(final_video.duration / original_bg.duration) + 1
 
-          bg_audio = concatenate_audioclips([bg_audio] * loops)
+          bg_audio = concatenate_audioclips([original_bg ] * loops)
 
           bg_audio = bg_audio.subclipped(0, final_video.duration)
 
@@ -297,4 +297,4 @@ def generate_video(month, tts_response, ABS_DIR, env):
         return {'message': f'Video generated successfully and sent to {recipient_email} '}
     except Exception as e:
         logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=False)
-        raise Exception("Failed to generate video") from e
+        raise Exception("Internal error") from e
