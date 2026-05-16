@@ -7,7 +7,7 @@ from time import time
 from PIL import Image, ImageOps
 from email.message import EmailMessage
 from slides.email_sender import send_email_with_video
-from moviepy import ImageClip, TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
+from moviepy import ImageClip, TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip, concatenate_audioclips
 from datetime import datetime
 
 # from slides.email_sender import send_email_with_video
@@ -81,7 +81,7 @@ def create_slide(background_clip, celebrant_img, details, font, duration=10):
     photo = extend_bottom_clip(photo, extend_pixels=93)
     photo = photo.with_position((86, 94)).with_duration(duration)
 
-    logger.debug(f"Celebrant details: {details}")
+
     date = details["celebrant"][0]
     x, y = 1450, 930
     date_text = TextClip(
@@ -135,21 +135,25 @@ def create_slide(background_clip, celebrant_img, details, font, duration=10):
 def generate_slides_from_dir(pic_dir, bg_file, audio_file, font_file,duration_list):
     
     # Gather all celebrant images (exclude background)
+
+    def sort_key(x):
+        first_num = int(re.match(r"\d+", x).group())
+
+        day_match = re.search(r"gen_(\d+)", x)
+        day = int(day_match.group(1)) if day_match else 0
+
+        return (first_num, day)
+
     celeb_files = sorted(
         [
             f for f in os.listdir(pic_dir)
             if f.lower().endswith((".jpg", ".png")) and f != os.path.basename(bg_file)
         ],
-        key=lambda x: (
-            int(x.split("_")[0].replace("gen", "")),
-            int(x.split("_")[1])
-        )
+        key=sort_key
     )
-
     clips = []
     bg_clip = ImageClip(bg_file)
     for i, celeb_file in enumerate(celeb_files):
-
 
         celeb_path = os.path.join(pic_dir, celeb_file)
         # Crop to rectangle and save as temporary file
@@ -204,18 +208,30 @@ def parse_time(value):
     
     # Otherwise just parse as float
     return float(value)
-
+def fetch_bg_audio_filename(bg_audio_no):
+    filename = f"{bg_audio_no}_bg_audio.mp3"
+    
+    bg_audio_path = os.path.join(
+        os.path.dirname(BASE_DIR),
+        "data",
+        "_Background",
+        "audio",
+        filename
+    )
+    
+    return bg_audio_path
 def generate_video(month, tts_response, ABS_DIR, env):
     try:
+         
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         FONT_PATH = os.path.join(BASE_DIR, "fonts",  "DejaVuSerif.ttf")
         DATA_DIR = Path(ABS_DIR).parent
-        BG_PIC_FILE = DATA_DIR / "_Background" / "bg_brown_1.png"
-        AUDIO_FILE = os.path.join(ABS_DIR, "voiceover.mp3")  # optionall
+        BG_PIC_FILE = DATA_DIR / "_Background" / "bg_blue_1.png"
+        AUDIO_FILE = os.path.join(ABS_DIR, "voiceover.mp3")  
         PIC_DIR=os.path.abspath(os.path.join(ABS_DIR, "pics"))
 
-        
-
+        BG_AUDIO_DIR = fetch_bg_audio_filename(bg_audio_no=1)
+        logger.info("Slideshow generation starts")
         timestamps = []
         prev = 0
         for phrase in tts_response:
@@ -238,6 +254,34 @@ def generate_video(month, tts_response, ABS_DIR, env):
         t = time()
         created_at = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         video_path = os.path.join(ABS_DIR, f"{month}_celebration_video.mp4")
+        
+        if os.path.exists(BG_AUDIO_DIR):
+          bg_audio = AudioFileClip(BG_AUDIO_DIR)
+
+          loops = int(final_video.duration / bg_audio.duration) + 1
+
+          bg_audio = concatenate_audioclips([bg_audio] * loops)
+
+          bg_audio = bg_audio.subclipped(0, final_video.duration)
+
+          # Keep music low
+          bg_audio = bg_audio.with_volume_scaled(0.15)
+
+          # Get existing narration audio
+          voice_audio = final_video.audio
+
+          # Mix narration + background music
+          mixed_audio = CompositeAudioClip([
+              voice_audio,
+              bg_audio
+          ])
+
+          final_video = final_video.with_audio(mixed_audio)
+          
+        elif final_video.audio is None:
+          final_video = final_video.without_audio()
+        
+        
         final_video.write_videofile(video_path, fps=24)
         logger.info(f"write_videofile took {time()-t:.2f}s")
         recipient_email="newtonkiprono19@gmail.com"
@@ -245,10 +289,11 @@ def generate_video(month, tts_response, ABS_DIR, env):
           sender_email="newtonsigei13105@gmail.com",
           sender_password="xquc hvnp zjks chgi",
           recipient_email=recipient_email,
-          subject="Your Generated Video",
-          body="Hi, your video is ready! See the attachment.",
+          subject=f"{month} Celebration video",
+          body=f"Hi, your video for {month} is ready! See the attachment.",
           video_path= video_path # path to  generated video
       )
+        logger.debug("Email response: %s", email_response)
         return {'message': f'Video generated successfully and sent to {recipient_email} '}
     except Exception as e:
         logger.error(f"Error generating video for month {month}: {str(e)}", exc_info=False)
