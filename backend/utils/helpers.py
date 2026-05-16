@@ -65,50 +65,10 @@ def raw_script_maker(script_file, event, celebrant_image):
 	except Exception as e:
 		logger.exception("Error updating script: %s", str(e))
 		raise Exception("Failed to update script") from e
-		
-def json_to_script_txt(json_file, txt_file):
-	try:
-		json_file = Path(json_file)
-		txt_file = Path(txt_file)
-
-		if not json_file.exists():
-			raise FileNotFoundError(f"{json_file} does not exist")
-
-		data = json.loads(json_file.read_text(encoding="utf-8"))
-		lines = []
-
-		# Handle Birthdays
-		birthdays = data.get("Birthdays", {})
-		if birthdays:
-			for gen in sorted(birthdays.keys(), key=lambda x: int(re.findall(r"\d+", x)[0])):
-				lines.append("Birthdays")
-				lines.append(f"{gen} generation")
-				for entry in birthdays[gen]:
-					lines.append(entry)
-				lines.append("") 
-
-		# Handle other events (e.g., Wedding)
-		for event, entries in data.items():
-			if event == "Birthdays":
-				continue
-			if entries:
-				lines.append(event.capitalize())
-				for entry in entries:
-					lines.append(entry)
-				lines.append("") 
-
-		# Save to script.txt
-		text_content = "\n".join(lines)
-		txt_file.write_text(text_content, encoding="utf-8")
-		return text_content
-
-	except Exception as e:
-		logger.exception("Error converting JSON to text:%s", str(e))
-		raise Exception("Failed to convert JSON to text") from e
 
 def validate_cend_count(ai_text, celebrants_no):
 	cend_no = len(re.findall("<cend>", ai_text))
-	logger.debug(f"<cend> markers = {cend_no}")
+
 	return cend_no == celebrants_no
 
 def generate_ai_script(month, retries=10):
@@ -129,16 +89,18 @@ def generate_ai_script(month, retries=10):
 		with open(script_json, "r") as f:
 			script_txt = json.load(f)
 
-		# Convert JSON → plain text
-		# text_data = json_to_script_txt(script_json, script_txt)
-		# if isinstance(text_data, dict) and "Error" in text_data:
-		# 	return text_data
 		celebrants_file = Path("./data") / month / "script.json"
+
 		with open(celebrants_file, "r") as f:
 			celebrants = json.load(f)
-		for v in celebrants.values():
-			celebrants_no = sum((len(g))for g in v.values())
-		logger.debug(f"Number of celebrants for {month} is {celebrants_no}")
+
+		celebrants_no = 0
+		for k, v in celebrants.items():
+			if isinstance(v, dict):
+				celebrants_no += sum(len(g) for g in v.values())
+			elif isinstance(v, list):
+				celebrants_no += len(v)
+
 		# Prompt for structured narration with markers
 		prompt = f"""
 		You are a family celebration narrator. Create a warm, conversational script announcing birthdays and anniversaries for {month}.

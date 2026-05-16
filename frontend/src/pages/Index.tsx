@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import Cropper from "react-easy-crop";
+import { getCroppedImg, blobToFile } from "../lib/utils";
 import {
   Upload,
   Sparkles,
@@ -27,19 +29,40 @@ const TABS = [
   { id: "generate", label: "Generate", icon: Sparkles },
   { id: "preview", label: "Preview", icon: Play },
 ] as const;
+const getDaysInMonth = (month: string) => {
+  if (!month) return 31;
 
+  const monthIndex = new Date(`${month} 1, 2024`).getMonth();
+  return new Date(2024, monthIndex + 1, 0).getDate();
+};
+const formatRelationName = (
+  gender: string,
+  name: string,
+  generation: number
+) => {
+  if (!name) return "";
+
+  if (generation < 3) return name;
+
+  const prefix = gender === "male" ? "s-o" : "d-o";
+
+  return `${prefix} ${name}`;
+};
 type TabId = (typeof TABS)[number]["id"];
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabId>("upload");
-
+const fileInputRef = useRef<HTMLInputElement>(null);
   // Upload state
-  const [form, setForm] = useState({
-    name: "",
-    month: "January",
-    date: "",
-    type: "",
-  });
+   const initialForm = {
+  name: "",
+  month: "",
+  date: "",
+  gender: "",
+  event: "",
+  image: null,
+};
+  const [form, setForm] = useState(initialForm);  
   const [generation, setGeneration] = useState(1);
   const [parentName, setParentName] = useState("");
   const [grandparentName, setGrandparentName] = useState("");
@@ -47,53 +70,147 @@ export default function Index() {
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<any>(null);
+  const [monthOpen, setMonthOpen] = useState(false);  
+  const [dateOpen, setDateOpen] = useState(false);
+  const [isAnniversary, setisAnniversary] = useState(false)
+  const [requiresGender, setisRequiresGender] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null);
+  type Area = { x: number; y: number; width: number; height: number };
 
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [showCrop, setShowCrop] = useState(false);
   // Gallery state (demo data — replace with real API)
   const [galleryImages] = useState<any[]>([]);
 
   // Generate state
-  const [videoMonth, setVideoMonth] = useState("January");
+  const [videoMonth, setVideoMonth] = useState("");
   const [videoStatus, setVideoStatus] = useState<any>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const handleCropConfirm = async () => {
+    if (!imagePreview || !croppedAreaPixels) return;
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const blob = await getCroppedImg(imagePreview, croppedAreaPixels);
+    const file = blobToFile(blob);
+
     setImage(file);
-    setImagePreview(URL.createObjectURL(file));
+    setImagePreview(URL.createObjectURL(blob));
+    setShowCrop(false);
   };
 
-  const handleUpload = async () => {
-    if (!image) return setUploadStatus({ error: "Please select an image." });
-    setLoading(true);
-    setUploadStatus(null);
-    try {
-      const fd = new FormData();
-      fd.append("name", form.name);
-      fd.append("month", form.month);
-      fd.append("date", form.date);
+
+const handleUpload = async () => {
+  // Basic validation
+  if (!(image instanceof File)) {
+    return setUploadStatus({ error: "Please select a valid image." });
+  }
+  if (!form.name || !form.month || !form.date || !form.event?.trim()) {
+    return setUploadStatus({ error: "Please fill in all required fields." });
+  }
+
+  setUploading(true);
+  setUploadStatus(null);
+
+  try {
+    const fd = new FormData();
+
+    // Core fields
+    fd.append("name", form.name);
+    fd.append("month", form.month);
+    console.log("Form EVENT = ", form.event)
+    if (form.event === "anniversary"){
+        fd.append("generation", "9anniversary");
+    } else {
       fd.append("generation", String(generation));
-      fd.append("type", form.type);
-      if (generation >= 3) fd.append("parent_name", parentName);
-      if (generation >= 4) fd.append("grandparent_name", grandparentName);
-      if (generation >= 5) fd.append("great_grandparent_name", greatGrandparentName);
-      fd.append("image", image);
-      const res = await fetch(`${BASE_URL}/upload`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Upload failed");
-      setUploadStatus({ success: true, data });
-    } catch (e: any) {
-      setUploadStatus({ error: e.message });
-    } finally {
-      setLoading(false);
     }
-  };
 
+    fd.append("event", form.event); // "birthday" | "anniversary"
+    
+    console.log("requiresGender = ", requiresGender)
+    setisRequiresGender(form.event === "birthday" && generation >= 3);
+    // Relations (only when needed)
+    if (generation >= 3 && parentName) {
+      fd.append(
+        "relation_1",
+        formatRelationName(form.gender, parentName, generation)
+      );
+    }
+    if (generation >= 4 && grandparentName) {
+      fd.append("relation_2", grandparentName);
+    }
+    if (generation >= 5 && greatGrandparentName) {
+      fd.append("relation_3", greatGrandparentName);
+    }
+
+    // Image
+    fd.append("image", image);
+    fd.append("date", form.date);
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 5000);
+
+  const res = await fetch(`${BASE_URL}/upload`, {
+    method: "POST",
+    body: fd,
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error("Server returned invalid JSON");
+    }
+
+    if (!res.ok) {
+        const errorMessage =
+          data?.detail
+            ? typeof data.detail === "string"
+              ? data.detail
+              : JSON.stringify(data.detail)
+            : "Upload failed";
+
+        throw new Error(errorMessage);
+    }
+
+  setUploadStatus({ success: true, data });
+
+  // reset form
+  setForm(initialForm);
+  setImage(null);
+  setImagePreview(null);
+  setGeneration(1)
+
+  if (fileInputRef.current) {
+    fileInputRef.current.value = "";
+  }
+
+  // keep spinner ONLY if you really want UX delay
+  setTimeout(() => {
+    setUploading(false);
+    setUploadStatus(null)
+  }, 2000);
+  } catch (e: any) {
+    console.error("Upload error:", e);
+
+    if (e.name === "AbortError") {
+      setUploadStatus({ error: "Upload timeout)" });
+    } else {
+      setUploadStatus({ error: e.message || "Something went wrong" });
+    }
+
+    setUploading(false);
+  }
+  };
+ 
   const handleGenerateVideo = async () => {
-    setLoading(true);
+    setGenerating(true);
     setVideoStatus(null);
     try {
       const res = await fetch(`${BASE_URL}/generate-video/${videoMonth}`);
@@ -104,10 +221,22 @@ export default function Index() {
     } catch (e: any) {
       setVideoStatus({ error: e.message });
     } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
-
+  
+  console.log("annive = ", isAnniversary)
+    const isValid =
+      form.name.trim() !== "" &&
+      form.month.trim() !== "" &&
+      form.date.trim() !== "" &&
+      form.event.trim() !== "" &&
+      
+      (isAnniversary || !requiresGender && form.gender.trim() !== "") &&
+      (generation < 3 || parentName.trim()) &&
+      (generation < 4 || grandparentName.trim()) &&
+      (generation < 5 || greatGrandparentName.trim()) &&
+      image instanceof File;
   const inputClass =
     "w-full px-4 py-3 bg-secondary border border-border rounded-lg text-foreground font-body placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all";
 
@@ -154,134 +283,349 @@ export default function Index() {
         </div>
       </nav>
 
+      {showCrop && imagePreview && (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div className="bg-card p-6 rounded-xl w-[90%] max-w-md">
+          
+        <p className="text-xs text-muted-foreground mb-2">
+          Drag and zoom to position the face inside the frame
+        </p>
+
+          <div className="relative w-full h-[300px]">
+            <Cropper
+              image={imagePreview}
+              crop={crop}
+              zoom={zoom}
+              aspect={1} // MUST match backend
+              onCropChange={setCrop}
+              onZoomChange={setZoom}
+              onCropComplete={(_, croppedPixels) =>
+                setCroppedAreaPixels(croppedPixels)
+              }
+            />
+
+            {/* Frame overlay */}
+            <div className="absolute inset-0 border-4 border-white/80 pointer-events-none rounded-lg" />
+
+            {/* Safe line (face guide) */}
+            <div className="absolute top-[35%] left-0 right-0 h-[1px] bg-white/40 pointer-events-none" />
+          </div>
+
+          {/* Zoom slider */}
+          <input
+            type="range"
+            min={1}
+            max={3}
+            step={0.1}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="w-full mt-4"
+          />
+
+          <div className="flex justify-between mt-4">
+            <button
+              onClick={() => setShowCrop(false)}
+              className="px-4 py-2 bg-secondary rounded-lg"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={handleCropConfirm}
+              className="px-4 py-2 bg-primary text-white rounded-lg"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
       {/* Main content */}
       <main className="relative z-10 max-w-2xl mx-auto px-4 pb-20">
         {/* Upload Tab */}
-        {activeTab === "upload" && (
-          <div className="panel-enter space-y-6">
-            <div className="card-shine bg-card border border-border rounded-2xl p-6 sm:p-8">
-              <h2 className="text-2xl font-display font-bold mb-1">Upload Image</h2>
-              <p className="text-muted-foreground text-sm mb-8">
-                Add a photo to the celebration timeline
-              </p>
+{activeTab === "upload" && (
+  <div className="panel-enter space-y-6">
+    <div className="card-shine bg-card border border-border rounded-2xl p-6 sm:p-8">
+      <h2 className="text-2xl font-display font-bold mb-1">Upload Image</h2>
+      <p className="text-muted-foreground text-sm mb-8">
+        Add a photo to the celebration timeline
+      </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                    <User className="w-3 h-3 inline mr-1" />
-                    Celebrant's Name
-                  </label>
-                  <input
-                    className={inputClass}
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="e.g. James Okafor"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                    <Calendar className="w-3 h-3 inline mr-1" />
-                    Month
-                  </label>
-                  <select
-                    className={inputClass}
-                    value={form.month}
-                    onChange={(e) => setForm({ ...form, month: e.target.value })}
-                  >
-                    {MONTHS.map((m) => (
-                      <option key={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                    Date
-                  </label>
-                  <input
-                    className={inputClass}
-                    value={form.date}
-                    onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    placeholder="e.g. 15th"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                    <Type className="w-3 h-3 inline mr-1" />
-                    Type
-                  </label>
-                  <input
-                    className={inputClass}
-                    value={form.type}
-                    onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    placeholder="e.g. Birthday"
-                  />
-                </div>
-              </div>
+      {(() => {
+        const daysInMonth = getDaysInMonth(form.month);
 
-              <GenerationFields
-                generation={generation}
-                parentName={parentName}
-                grandparentName={grandparentName}
-                greatGrandparentName={greatGrandparentName}
-                onGenerationChange={setGeneration}
-                onParentNameChange={setParentName}
-                onGrandparentNameChange={setGrandparentName}
-                onGreatGrandparentNameChange={setGreatGrandparentName}
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+
+            {/* Name */}
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                <User className="w-3 h-3 inline mr-1" />
+                Celebrant's Name
+              </label>
+              <input
+                className={inputClass}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
+            </div>
 
-              {/* Drop zone */}
-              <div
-                onClick={() => fileRef.current?.click()}
-                className="mt-6 border-2 border-dashed border-border rounded-xl min-h-[200px] flex items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-secondary/50 transition-all duration-300 group"
-              >
-                {imagePreview ? (
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="w-full max-h-[280px] object-cover rounded-lg"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-3 p-8 text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                      <Camera className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Click to select an image
-                    </p>
-                    <p className="text-xs text-muted-foreground/60">
-                      JPG, PNG — max 10MB
-                    </p>
-                  </div>
-                )}
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={handleImageChange}
-                />
-              </div>
+          {/* Month Grid */}
+            <div className="relative">
+              <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                Month
+              </label>
 
+              {/* Trigger (looks like select) */}
               <button
-                onClick={handleUpload}
-                disabled={loading}
-                className="mt-6 w-full py-4 bg-primary text-primary-foreground rounded-xl font-display font-semibold text-sm uppercase tracking-widest hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2"
+                type="button"
+                onClick={() => setMonthOpen(!monthOpen)}
+                className="
+                  w-full px-4 py-3 bg-secondary border border-border
+                  rounded-xl text-left flex justify-between items-center
+                  hover:border-primary/40 transition-all
+                "
               >
-                {loading ? (
-                  <span className="spinner text-lg">◌</span>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    Upload Image
-                  </>
-                )}
+                <span>
+                  {form.month || "Select month"}
+                </span>
+                <span className="text-muted-foreground">▾</span>
               </button>
 
-              <StatusBox status={uploadStatus} />
+              {/* Dropdown panel */}
+              {monthOpen && (
+                <div className="
+                  absolute z-50 mt-2 w-full p-3
+                  bg-card border border-border rounded-xl shadow-lg
+                ">
+                  <div className="grid grid-cols-3 gap-2">
+                    {MONTHS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setForm({
+                            ...form,
+                            month: m,
+                            date: ""
+                          });
+                          setMonthOpen(false);
+                        }}
+                        className={`
+                          px-2 py-2 rounded-lg text-sm border transition-all
+                          ${
+                            form.month === m
+                              ? "bg-primary text-white border-primary"
+                              : "bg-secondary hover:border-primary/40"
+                          }
+                        `}
+                      >
+                        {m.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+
+            <div className="flex gap-4 items-end">
+              
+          {/* Date Grid */}
+            <div className="relative w-[160px]">
+              <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                Date
+              </label>
+
+              {/* Trigger */}
+              <button
+                type="button"
+                onClick={() => setDateOpen(!dateOpen)}
+                className="
+                  w-full px-4 py-3 bg-secondary border border-border
+                  rounded-xl text-left flex justify-between items-center
+                  hover:border-primary/40 transition-all
+                "
+              >
+                <span>
+                  {form.date ? `Day ${form.date}` : "Select day"}
+                </span>
+                <span className="text-muted-foreground">▾</span>
+              </button>
+
+              {/* Dropdown */}
+              {dateOpen && (
+                <div className="
+                  absolute z-50 mt-2 w-full p-3
+                  bg-card border border-border rounded-xl shadow-lg
+                ">
+                  <div className="grid grid-cols-7 gap-2">
+                    {[...Array(daysInMonth)].map((_, i) => {
+                      const day = i + 1;
+
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            setForm({ ...form, date: String(day) });
+                            setDateOpen(false);
+                          }}
+                          className={`
+                            aspect-square rounded-lg text-sm border transition-all
+                            ${
+                              form.date === String(day)
+                                ? "bg-primary text-white border-primary shadow"
+                                : "bg-secondary hover:border-primary/40"
+                            }
+                          `}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+              {/* Gender */}
+              <div >
+                <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                  Gender
+                </label>
+
+              <select
+                className={inputClass}
+                required
+                value={form.gender}
+                disabled={isAnniversary}
+                onChange={(e) => setForm({ ...form, gender: e.target.value })}
+              >
+                <option value="">Choose</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              </div>
+
+              </div>
+            {/* Event */}
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+                Event
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({ ...form, event: "birthday" });
+                    setisAnniversary(false);
+                  }
+                }
+                  className={
+                    form.event === "birthday"
+                      ? "bg-primary text-white px-3 py-2 rounded-lg text-sm"
+                      : "bg-secondary px-3 py-2 rounded-lg text-sm"
+                  }
+                >
+                  Birthday
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({ ...form, event: "anniversary"
+                   });
+                   setisAnniversary(true)
+                  }
+                }
+                  className={
+                    form.event === "anniversary"
+                      ? "bg-primary text-white px-3 py-2 rounded-lg text-sm"
+                      : "bg-secondary px-3 py-2 rounded-lg text-sm"
+                  }
+                >
+                  Anniversary
+                </button>
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
+
+      <GenerationFields
+        generation={generation}
+        parentName={parentName}
+        grandparentName={grandparentName}
+        greatGrandparentName={greatGrandparentName}
+        onGenerationChange={setGeneration}
+        onParentNameChange={setParentName}
+        onGrandparentNameChange={setGrandparentName}
+        onGreatGrandparentNameChange={setGreatGrandparentName}
+      />
+
+      {/* Drop zone */}
+      <div
+        onClick={() => fileInputRef.current?.click()}
+        className="mt-6 border-2 border-dashed border-border rounded-xl min-h-[200px] flex items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-secondary/50 transition-all duration-300 group"
+      >
+        {imagePreview ? (
+          <img
+            src={imagePreview}
+            alt="Preview"
+            className="w-full max-h-[280px] object-cover rounded-lg"
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-3 p-8 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+              <Camera className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Click to select an image
+            </p>
+            <p className="text-xs text-muted-foreground/60">
+              JPG, PNG — max 10MB
+            </p>
           </div>
         )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
 
+            setImage(file);
+            setForm({ ...form, image: file });
+
+            setImagePreview(URL.createObjectURL(file));
+            setShowCrop(true);
+          }}
+        />
+      </div>
+
+      {/* Upload button */}
+      <button
+        onClick={handleUpload}
+        disabled={!isValid || uploading }
+        className="mt-6 w-full py-4 bg-primary text-primary-foreground rounded-xl font-display font-semibold text-sm uppercase tracking-widest hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2"
+      >
+        {uploading  ? (
+          <span className="spinner text-lg">◌</span>
+        ) : (
+          <>
+            <Upload className="w-4 h-4" />
+            Upload Image
+          </>
+        )}
+      </button>
+
+      <StatusBox status={uploadStatus} />
+    </div>
+  </div>
+)}
         {/* Gallery Tab */}
         {activeTab === "gallery" && (
           <div className="panel-enter">
@@ -294,7 +638,6 @@ export default function Index() {
             </div>
           </div>
         )}
-
         {/* Generate Tab */}
         {activeTab === "generate" && (
           <div className="panel-enter">
@@ -314,7 +657,20 @@ export default function Index() {
                   onChange={(e) => setVideoMonth(e.target.value)}
                 >
                   {MONTHS.map((m) => (
-                    <option key={m}>{m}</option>
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          month: m,
+                          date: "" // resets when month changes
+                        })
+                      }
+                      className={form.month === m ? "active-class" : "default-class"}
+                    >
+                      {m.slice(0, 3)}
+                    </button>
                   ))}
                 </select>
               </div>
@@ -332,10 +688,10 @@ export default function Index() {
 
               <button
                 onClick={handleGenerateVideo}
-                disabled={loading}
+                disabled={uploading}
                 className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-display font-semibold text-sm uppercase tracking-widest hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2"
               >
-                {loading ? (
+                {generating  ? (
                   <span className="spinner text-lg">◌</span>
                 ) : (
                   <>

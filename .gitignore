@@ -6,7 +6,7 @@ backend/debug/*del
 __pycache__/
 *.py[codz]
 *$py.class
-
+backend/debug/
 # C extensions
 *.so
 

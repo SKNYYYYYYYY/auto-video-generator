@@ -32,7 +32,7 @@ export default function GenerationFields({
           onChange={(e) => onGenerationChange(Number(e.target.value))}
           className="w-full px-4 py-3 bg-secondary border border-border rounded-lg text-foreground font-body focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
         >
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+          {[1, 2, 3, 4, 5, 6].map((n) => (
             <option key={n} value={n}>
               {n}{n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"} Generation
             </option>

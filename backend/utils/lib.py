@@ -11,9 +11,9 @@ logger = get_logger(__name__)
 
 async def image_saver(name, month, date, generation, event, image, relation):
   try:
-
-    celebrant_image = f"{generation}gen_{date}_{month}_{name}_{relation}.png" if relation else f"{generation}gen_{date}_{month}_{name}.png"
-    logger.debug("Generated celebrant image filename: %s", celebrant_image)
+    logger.debug("Relation %s", relation)
+    safe_relation = "_".join(relation) if relation else ""
+    celebrant_image = f"{generation}gen_{date}_{month}_{name}_{safe_relation}.png" if safe_relation else f"{generation}gen_{date}_{month}_{name}.png"
     if image:
       dir_path = Path("./data") / month
       dir_path.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ async def image_saver(name, month, date, generation, event, image, relation):
 
       with open (file_path, 'wb') as f:
         f.write(await image.read())
-      return {"message": f"image saved successfully in {file_path} and script updated"}
+      return {"message": f"image saved successfully"}
     return {"message": "no image provided"}
   except Exception as e:
     logger.exception("Error saving image or updating script")
@@ -42,26 +42,26 @@ async def video_generator(month, env):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     ABS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data", month))
     if env != "dev":
-      # try:
-      #     # generate the voiceover script using the NLP
-      #     raw_voiceover_dict = generate_ai_script(month)
-      #     if not raw_voiceover_dict["is_successful"]:
-      #        raise LLMError("Please try again. Error occured while generating voiceover text.")
-      #     voiceover_text = raw_voiceover_dict.get("ai_response", "")
+      try:
+          # generate the voiceover script using the NLP
+          raw_voiceover_dict = generate_ai_script(month)
+          if not raw_voiceover_dict["is_successful"]:
+             raise LLMError("Please try again. Error occured while generating voiceover text.")
+          voiceover_text = raw_voiceover_dict.get("ai_response", "")
           
-      #     if not voiceover_text:
-      #         raise LLMError("Empty response received from LLM")
+          if not voiceover_text:
+              raise LLMError("Empty response received from LLM")
               
-      #     logger.info("LLM response received successfully")
+          logger.info("LLM response received successfully")
           
-      # except LLMError:
-      #     raise
-      # except Exception as e:
-      #     logger.error("LLM failed to generate voiceover script: %s", str(e), exc_info=True)
-      #     raise LLMError(f"Failed to generate voiceover script: {str(e)}") from e
+      except LLMError:
+          raise
+      except Exception as e:
+          logger.error("LLM failed to generate voiceover script: %s", str(e), exc_info=True)
+          raise LLMError(f"Failed to generate voiceover script: {str(e)}") from e
       
       try:
-          ai_script_path = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "January", "ai_script.txt"))
+          ai_script_path = os.path.abspath(os.path.join(BASE_DIR, "..", "data", f"{month}", "ai_script.txt"))
           with open(ai_script_path, 'r') as f:
              voiceover_text = f.read()
           # generate voiceover audio using TTS
@@ -71,10 +71,15 @@ async def video_generator(month, env):
       except Exception as e:
           logger.error("TTS failed to generate audio: %s", str(e), exc_info=True)
           raise TTSError(f"Failed to generate audio: {str(e)}") from e
+      try:
+          vid_response = generate_video(month, tts_response , ABS_DIR, env)
+          return vid_response
+      except Exception as e:
+         raise VIDError(f"Failed to generate audio: {str(e)}") from e
     else:  
       try:
           # generate the video slides and compile the final video
-          tts_response =  [{'phrase': 'of [Getrude]', 'end_time': 17.48}, {'phrase': 'to [Richard]', 'end_time': 21.79}, {'phrase': 'to [X]', 'end_time': 28.225}, {'phrase': 'to [X]', 'end_time': 33.377}, {'phrase': 'to [X]', 'end_time': 39.409}, {'phrase': 'to [X]', 'end_time': 50.049}, {'phrase': 'to [X]', 'end_time': 55.569}, {'phrase': 'to [X]', 'end_time': '01.01.201'}, {'phrase': 'to [X]', 'end_time': '01.08.185'}, {'phrase': 'to [X]', 'end_time': '01.14.625'}, {'phrase': 'to [X]', 'end_time': '01.22.404'}, {'phrase': 'to [X]', 'end_time': '01.26.345'}]
+          tts_response =  [{'phrase': 'celebrate John Kerich', 'start_time': 11.656, 'end_time': 12.852}, {'phrase': 'to Janet Cheruiyot', 'start_time': 15.685, 'end_time': 16.765}, {'phrase': 'Annete d-o Agnes', 'start_time': 22.059, 'end_time': 23.371}, {'phrase': 'Roselyn and Benerd', 'start_time': 30.685, 'end_time': 31.695}]
           vid_response = generate_video(month, tts_response , ABS_DIR, env)
           return vid_response
       except Exception as e:
