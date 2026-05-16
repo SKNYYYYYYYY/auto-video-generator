@@ -30,12 +30,20 @@ async def upload(
   name: str = Form(...),
   month: str = Form(...),
   date: int = Form(...),
-  generation: int = Form(...),
-  type: str = Form(...),
+  generation: str = Form(...),
+  event: str = Form(...),
   image: UploadFile = File(...),
-  relation: str = Form(None)
+  relation_1: str = Form(None),
+  relation_2: str = Form(None),
+  relation_3: str = Form(None)
 ):
-  response = await image_saver(name, month, date, generation, type, image, relation)
+  relation = []
+  relation.append(relation_1) if relation_1 else None
+  relation.append(relation_2) if relation_2 else None
+  relation.append(relation_3) if relation_3 else None
+  
+  response = await image_saver(name, month, date, generation, event, image, relation)
+
   return response
 
 @app.get("/generate-video/{month}")
